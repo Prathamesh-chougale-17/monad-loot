@@ -7,11 +7,12 @@ import type { LootItem } from "@/types";
 import {
   getCollectedLootFromLocalStorage,
   listLootItemForSaleInLocalStorage,
-  clearAllLootFromLocalStorage, // Import the new function
+  clearAllLootFromLocalStorage,
+  getMarketplaceListedItemsFromLocalStorage, // Added missing import
 } from "@/lib/localStorage";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { Inbox, RotateCcw, Trash2 } from "lucide-react"; // Added Trash2
+import { Inbox, RotateCcw, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAccount } from "wagmi";
 import {
@@ -30,27 +31,37 @@ export default function LootPage() {
   const [myLoot, setMyLoot] = useState<LootItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isClearAlertOpen, setIsClearAlertOpen] = useState(false);
+  const [canClearAnyLoot, setCanClearAnyLoot] = useState(false);
   const { toast } = useToast();
   const { address } = useAccount();
 
   const loadLoot = () => {
     setIsLoading(true);
-    const loot = getCollectedLootFromLocalStorage();
-    const userLoot = loot.filter(
-      (item) => !item.ownerAddress || item.ownerAddress === address
-    );
-    setMyLoot(userLoot.sort((a, b) => b.timestamp - a.timestamp));
+    if (address) {
+      const loot = getCollectedLootFromLocalStorage();
+      // Filter out items that might have other ownerAddresses, though primarily this should be user's loot.
+      // This also implicitly handles if address is undefined, as item.ownerAddress would not match.
+      const userLoot = loot.filter(
+        (item) => !item.ownerAddress || item.ownerAddress === address
+      );
+      setMyLoot(userLoot.sort((a, b) => b.timestamp - a.timestamp));
+    } else {
+      setMyLoot([]); // Clear loot if no address
+    }
     setIsLoading(false);
   };
 
   useEffect(() => {
-    if (address) {
-      loadLoot();
-    } else {
-      setMyLoot([]);
-      setIsLoading(false);
-    }
+    loadLoot();
   }, [address]);
+
+  useEffect(() => {
+    // Update canClearAnyLoot based on both collected and marketplace items in localStorage
+    const collected = getCollectedLootFromLocalStorage();
+    const marketplace = getMarketplaceListedItemsFromLocalStorage();
+    setCanClearAnyLoot(collected.length > 0 || marketplace.length > 0);
+  }, [myLoot]); // Rerun when myLoot changes (e.g., after listing or clearing)
+
 
   const handleListForSale = (item: LootItem) => {
     const price = Math.floor(Math.random() * (500 - 10 + 1)) + 10;
@@ -60,7 +71,7 @@ export default function LootPage() {
       description: `${item.name} has been listed for ${price} MND (simulated).`,
       className: "bg-primary text-primary-foreground border-primary",
     });
-    loadLoot();
+    loadLoot(); // Refresh the list of collected loot
   };
 
   const handleClearAllLoot = () => {
@@ -111,7 +122,7 @@ export default function LootPage() {
           </Button>
           <AlertDialog open={isClearAlertOpen} onOpenChange={setIsClearAlertOpen}>
             <AlertDialogTrigger asChild>
-              <Button variant="destructive" disabled={myLoot.length === 0 && getMarketplaceListedItemsFromLocalStorage().length === 0}>
+              <Button variant="destructive" disabled={!canClearAnyLoot}>
                 <Trash2 className="mr-2 h-4 w-4" /> Delete All NFTs
               </Button>
             </AlertDialogTrigger>
@@ -143,7 +154,7 @@ export default function LootPage() {
           <Inbox className="h-16 w-16 text-muted-foreground mb-4 mx-auto" />
           <h2 className="text-2xl font-semibold mb-2">Your Loot Cache is Empty</h2>
           <p className="text-muted-foreground mb-4">
-            Looks like you haven't unlocked any loot yet or listed everything.
+            Looks like you haven&apos;t unlocked any loot yet or listed everything.
           </p>
           <Button
             asChild
