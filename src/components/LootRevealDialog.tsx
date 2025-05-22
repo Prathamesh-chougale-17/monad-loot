@@ -1,5 +1,4 @@
-
-'use client';
+"use client";
 
 import {
   Dialog,
@@ -8,11 +7,11 @@ import {
   DialogTitle,
   DialogDescription,
   DialogFooter,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import LootItemCard from './LootItemCard';
-import type { LootItem } from '@/types';
-import { Sparkles } from 'lucide-react';
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import LootItemCard from "./LootItemCard";
+import type { LootItem } from "@/types";
+import { Sparkles } from "lucide-react";
 
 interface LootRevealDialogProps {
   item: LootItem | null;
@@ -20,12 +19,16 @@ interface LootRevealDialogProps {
   onClose: () => void;
 }
 
-export default function LootRevealDialog({ item, isOpen, onClose }: LootRevealDialogProps) {
+export default function LootRevealDialog({
+  item,
+  isOpen,
+  onClose,
+}: LootRevealDialogProps) {
   if (!item) return null;
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[480px] bg-card border-primary shadow-xl shadow-primary/30">
+      <DialogContent className="sm:max-w-[380px] bg-card border-primary shadow-xl shadow-primary/30">
         <DialogHeader>
           <DialogTitle className="text-2xl text-center text-primary flex items-center justify-center gap-2">
             <Sparkles className="h-6 w-6 text-accent" />
@@ -36,13 +39,16 @@ export default function LootRevealDialog({ item, isOpen, onClose }: LootRevealDi
             Congratulations! You've discovered:
           </DialogDescription>
         </DialogHeader>
-        
-        <div className="py-4">
+
+        <div className="py-2">
           <LootItemCard item={item} />
         </div>
 
         <DialogFooter>
-          <Button onClick={onClose} className="w-full bg-primary hover:bg-primary/90">
+          <Button
+            onClick={onClose}
+            className="w-full bg-primary hover:bg-primary/90"
+          >
             Close
           </Button>
         </DialogFooter>
