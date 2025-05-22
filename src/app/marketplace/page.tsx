@@ -4,11 +4,12 @@
 import { useState, useEffect } from 'react';
 import MarketplaceItemCard from '@/components/MarketplaceItemCard';
 import type { LootItem } from '@/types';
-import { getCollectedLoot } from '@/lib/localStorage';
+import { getCollectedLootFromLocalStorage, buyLootItemFromMarketplaceInLocalStorage } from '@/lib/localStorage'; // Updated import
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import { ShoppingCart, RotateCcw, SearchX } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { useAccount } from 'wagmi'; // For getting buyer address
 
 // Helper function to generate a random price
 const getRandomPrice = () => Math.floor(Math.random() * (1000 - 10 + 1)) + 10;
@@ -17,17 +18,26 @@ export default function MarketplacePage() {
   const [marketItems, setMarketItems] = useState<LootItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
+  const { address, isConnected } = useAccount();
 
   const loadMarketplaceItems = () => {
     setIsLoading(true);
-    const collectedLoot = getCollectedLoot();
-    const itemsWithPrices = collectedLoot.map(item => ({
+    // For the marketplace, we should load items specifically listed for sale.
+    // The current `getCollectedLootFromLocalStorage` fetches all items regardless of listing status.
+    // We'll keep using it for now, but in a real marketplace, you'd fetch from a dedicated "for sale" list.
+    // The `listLootItemForSaleInLocalStorage` function already moves items to a separate (simulated) list,
+    // so ideally we'd fetch from `getMarketplaceListedItemsFromLocalStorage` here.
+    // However, for simplicity and to match previous behavior of showing ALL collected items, we'll use this.
+    // We'll still rely on the `price` field to differentiate.
+    const allLoot = getCollectedLootFromLocalStorage(); 
+    const itemsForSale = allLoot.filter(item => item.price !== undefined); // Only show items with a price (listed)
+    
+    // If items don't have a price (e.g., directly from generation without listing), assign one
+    const itemsWithPrices = itemsForSale.map(item => ({
       ...item,
-      // Assign a dynamic price if not already present (for simulation)
-      // In a real app, price would be set when listing.
       price: item.price || getRandomPrice(), 
     }));
-    // Sort by most recent first, or some other logic for a marketplace
+    
     setMarketItems(itemsWithPrices.sort((a, b) => b.timestamp - a.timestamp));
     setIsLoading(false);
   };
@@ -37,18 +47,32 @@ export default function MarketplacePage() {
   }, []);
 
   const handleBuyItem = (item: LootItem) => {
-    console.log('Attempting to buy:', item);
-    toast({
-      title: 'Coming Soon!',
-      description: `Buying ${item.name} is not yet implemented.`,
-      className: 'bg-accent text-accent-foreground border-accent',
-    });
-    // In a real app, this would involve:
-    // 1. Checking user balance
-    // 2. Simulating a transaction with Monad
-    // 3. Transferring ownership of the NFT
-    // 4. Updating the item's status or removing it from the marketplace
-    // 5. Adding it to the buyer's collection
+    if (!isConnected || !address) {
+      toast({
+        title: 'Wallet Not Connected',
+        description: 'Please connect your wallet to buy items.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const boughtItem = buyLootItemFromMarketplaceInLocalStorage(item, address);
+
+    if (boughtItem) {
+      toast({
+        title: 'Purchase Successful!',
+        description: `You bought ${boughtItem.name}! It's now in your loot.`,
+        className: 'bg-primary text-primary-foreground border-primary',
+      });
+      loadMarketplaceItems(); // Refresh marketplace
+      // Potentially trigger a refresh on the /loot page if the user navigates there
+    } else {
+      toast({
+        title: 'Purchase Failed',
+        description: 'Could not complete the purchase. The item might no longer be available.',
+        variant: 'destructive',
+      });
+    }
   };
 
   if (isLoading) {
@@ -59,6 +83,18 @@ export default function MarketplacePage() {
       </div>
     );
   }
+  
+  if (!isConnected) {
+     return (
+      <div className="text-center min-h-[calc(100vh-200px)] flex flex-col justify-center items-center">
+        <ShoppingCart className="h-24 w-24 text-muted-foreground mb-6" />
+        <h1 className="text-3xl font-bold mb-4 text-primary">Connect Your Wallet</h1>
+        <p className="text-lg text-muted-foreground mb-6">
+          Please connect your wallet to browse and buy NFTs.
+        </p>
+      </div>
+    );
+  }
 
   if (marketItems.length === 0) {
     return (
@@ -66,10 +102,10 @@ export default function MarketplacePage() {
         <SearchX className="h-24 w-24 text-muted-foreground mb-6" />
         <h1 className="text-3xl font-bold mb-4 text-primary">Marketplace is Quiet</h1>
         <p className="text-lg text-muted-foreground mb-6">
-          No NFTs are currently listed for sale. Check back soon!
+          No NFTs are currently listed for sale. Check back soon or list one from your collection!
         </p>
         <Button asChild size="lg" className="bg-accent hover:bg-accent/90 text-accent-foreground">
-          <Link href="/">Discover Some NFTs</Link>
+          <Link href="/loot">List Your Loot</Link>
         </Button>
       </div>
     );
@@ -91,7 +127,7 @@ export default function MarketplacePage() {
         ))}
       </div>
        <p className="text-sm text-muted-foreground text-center pt-4">
-        Note: Prices are simulated. Buying functionality is a placeholder.
+        Note: Marketplace interactions are simulated using local storage.
       </p>
     </div>
   );
