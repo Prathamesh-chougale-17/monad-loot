@@ -28,7 +28,7 @@ export default function LootRevealDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[380px] bg-card border-primary shadow-xl shadow-primary/30">
+      <DialogContent className="max-w-xs sm:max-w-[380px] bg-card border-primary shadow-xl shadow-primary/30">
         <DialogHeader>
           <DialogTitle className="text-2xl text-center text-primary flex items-center justify-center gap-2">
             <Sparkles className="h-6 w-6 text-accent" />
