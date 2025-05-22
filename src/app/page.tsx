@@ -203,7 +203,7 @@ export default function HomePage() {
         <Card className="bg-card/70 backdrop-blur-sm border-accent mt-2">
           <CardContent className="p-3">
             <p className="text-sm text-accent-foreground flex items-center gap-2">
-              <Info className="h-5 w-5 text-accent" />
+              <Info className="h-5 w-5 text-primary" />
               You get 3 free NFT generations! Use them wisely.
             </p>
           </CardContent>
