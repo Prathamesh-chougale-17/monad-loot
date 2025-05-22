@@ -1,3 +1,4 @@
+
 'use client';
 
 import {
@@ -42,7 +43,7 @@ export default function LootRevealDialog({ item, isOpen, onClose }: LootRevealDi
 
         <DialogFooter>
           <Button onClick={onClose} className="w-full bg-primary hover:bg-primary/90">
-            Awesome!
+            Close
           </Button>
         </DialogFooter>
       </DialogContent>
