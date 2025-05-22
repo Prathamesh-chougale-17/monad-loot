@@ -12,10 +12,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@farcaster/auth-client": "^0.6.0",
-    "@farcaster/frame-core": "0.7.1",
+    "@farcaster/auth-client": "^0.3.0",
+    "@farcaster/frame-core": "^0.0.36",
     "@farcaster/frame-node": "^0.0.22",
-    "@farcaster/frame-sdk": "^0.7.0",
+    "@farcaster/frame-sdk": "^0.0.36",
     "@farcaster/frame-wagmi-connector": "^0.7.0",
     "@genkit-ai/googleai": "^1.8.0",
     "@genkit-ai/next": "^1.8.0",
