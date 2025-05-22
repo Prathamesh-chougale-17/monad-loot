@@ -19,10 +19,10 @@ const GenerateNftArtInputSchema = z.object({
 export type GenerateNftArtInput = z.infer<typeof GenerateNftArtInputSchema>;
 
 const GenerateNftArtOutputSchema = z.object({
-  nftImageDataUri: z
+  nftImageUrl: z
     .string()
     .describe(
-      'The generated NFT art as a data URI that must include a MIME type and use Base64 encoding. Expected format: \'data:<mimetype>;base64,<encoded_data>\'.' /* data-uri */
+      'The URL of the generated NFT art, ideally stored in cloud storage.'
     ),
 });
 export type GenerateNftArtOutput = z.infer<typeof GenerateNftArtOutputSchema>;
@@ -35,7 +35,7 @@ const generateNftArtPrompt = ai.definePrompt({
   name: 'generateNftArtPrompt',
   input: {schema: GenerateNftArtInputSchema},
   output: {schema: GenerateNftArtOutputSchema},
-  prompt: `Generate an image for the NFT based on the following description: {{{nftDescription}}}. The image should be visually appealing and unique.`,
+  prompt: `Generate an image for the NFT based on the following description: {{{nftDescription}}}. The image should be visually appealing and unique. Respond with the image URL.`,
 });
 
 const generateNftArtFlow = ai.defineFlow(
@@ -54,6 +54,13 @@ const generateNftArtFlow = ai.defineFlow(
       },
     });
 
-    return {nftImageDataUri: media.url!};
+    // In a production app, you would upload media.url (the data URI) 
+    // to a cloud storage service like Firebase Storage here,
+    // and then get its public HTTPS URL. 
+    // For now, we'll continue to use the data URI directly as the nftImageUrl.
+    const imageUrl = media.url!; 
+
+    return {nftImageUrl: imageUrl};
   }
 );
+

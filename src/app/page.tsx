@@ -106,7 +106,7 @@ export default function HomePage() {
         id: crypto.randomUUID(),
         name: nftName,
         flavorText: flavorTextResult.flavorText,
-        imageUrl: artResult.nftImageDataUri,
+        imageUrl: artResult.nftImageUrl, // Updated to use nftImageUrl
         timestamp: Date.now(),
       };
 
@@ -197,3 +197,4 @@ export default function HomePage() {
     </div>
   );
 }
+

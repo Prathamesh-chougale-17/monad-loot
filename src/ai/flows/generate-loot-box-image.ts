@@ -18,7 +18,7 @@ const GenerateLootBoxImageInputSchema = z.object({
 export type GenerateLootBoxImageInput = z.infer<typeof GenerateLootBoxImageInputSchema>;
 
 const GenerateLootBoxImageOutputSchema = z.object({
-  imageUrl: z.string().describe('The generated image URL for the loot box.'),
+  imageUrl: z.string().describe('The generated image URL for the loot box, ideally stored in cloud storage.'),
 });
 export type GenerateLootBoxImageOutput = z.infer<typeof GenerateLootBoxImageOutputSchema>;
 
@@ -59,6 +59,13 @@ Content Description: ${input.contentDescription}`,
       },
     });
 
-    return {imageUrl: media.url!};
+    // In a production app, you would upload media.url (the data URI) 
+    // to a cloud storage service like Firebase Storage here,
+    // and then get its public HTTPS URL. 
+    // For now, we'll continue to use the data URI directly as the imageUrl.
+    const imageUrl = media.url!;
+
+    return {imageUrl: imageUrl};
   }
 );
+
