@@ -1,3 +1,4 @@
+
 "use client";
 
 import Link from "next/link";
@@ -9,7 +10,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { PackageSearch, Sparkles, ArrowRight, Info } from "lucide-react";
+import { PackageSearch, Sparkles, ArrowRight, Info, UploadCloud } from "lucide-react";
 import MysteryBox from "@/components/MysteryBox";
 import InteractionPanel from "@/components/InteractionPanel";
 import LootRevealDialog from "@/components/LootRevealDialog";
@@ -23,10 +24,12 @@ import {
   type GenerateNftArtOutput,
 } from "@/ai/flows/generate-nft-art";
 import { generateLootBoxImage } from "@/ai/flows/generate-loot-box-image";
+import { generateDynamicNftImageDataUri } from "@/ai/flows/generate-dynamic-nft-image-data-uri";
 import { useState, useEffect } from "react";
 import { useAccount } from "wagmi";
 import { monadTestnet } from "wagmi/chains";
 import { useMiniAppContext } from "@/hooks/useMiniAppContext";
+import { useEdgeStore } from '@/lib/edgestore-client'; // Edgestore hook
 
 const nftThemes = [
   "Cybernetic Dragon",
@@ -56,8 +59,16 @@ const boxContentDescriptions = [
   "legendary weapons",
 ];
 
+// Helper function to convert data URI to File
+async function dataUrlToFile(dataUrl: string, fileName: string): Promise<File> {
+  const res = await fetch(dataUrl);
+  const blob = await res.blob();
+  return new File([blob], fileName, { type: blob.type });
+}
+
+
 export default function HomePage() {
-  const [hasKey, setHasKey] = useState(false); // True if wallet connected to Monad Testnet
+  const [hasKey, setHasKey] = useState(false); 
   const [isInteractingGeneral, setIsInteractingGeneral] = useState(false);
   const [isBoxOpening, setIsBoxOpening] = useState(false);
   const [isGeneratingBoxImage, setIsGeneratingBoxImage] = useState(true);
@@ -67,8 +78,10 @@ export default function HomePage() {
   const { toast } = useToast();
   const { address, isConnected, chainId } = useAccount();
   const { context: farcasterContext } = useMiniAppContext();
+  const { edgestore } = useEdgeStore();
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [isUploading, setIsUploading] = useState(false);
 
-  // TODO: Add state and effect to fetch and display remaining generations dynamically
 
   useEffect(() => {
     if (isConnected && chainId === monadTestnet.id) {
@@ -80,6 +93,7 @@ export default function HomePage() {
 
   const fetchNewBoxImage = async () => {
     setIsGeneratingBoxImage(true);
+    setBoxImageUrl(null); // Clear previous image
     try {
       const randomTheme =
         boxThemes[Math.floor(Math.random() * boxThemes.length)];
@@ -87,33 +101,54 @@ export default function HomePage() {
         boxContentDescriptions[
           Math.floor(Math.random() * boxContentDescriptions.length)
         ];
-      const imageResult = await generateLootBoxImage({
+      
+      // 1. Generate image data URI using Genkit flow
+      const genkitResult = await generateLootBoxImage({
         theme: randomTheme,
         contentDescription: randomContent,
       });
-      setBoxImageUrl(imageResult.imageUrl);
+      const imageDataUri = genkitResult.imageDataUri;
+
+      // 2. Upload data URI to Edgestore
+      if (imageDataUri && edgestore) {
+        setIsUploading(true);
+        setUploadProgress(0);
+        const imageFile = await dataUrlToFile(imageDataUri, `lootbox_${Date.now()}.png`);
+        const uploadRes = await edgestore.publicImages.upload({
+          file: imageFile,
+          options: { temporary: true }, // Optional: for faster uploads if not critical persistence yet
+          onProgressChange: (progress) => {
+            setUploadProgress(progress);
+          },
+        });
+        setBoxImageUrl(uploadRes.url);
+        setIsUploading(false);
+      } else {
+         throw new Error("Failed to generate image data or Edgestore not available.");
+      }
+
     } catch (error) {
-      console.error("Failed to generate loot box image:", error);
+      console.error("Failed to generate or upload loot box image:", error);
       toast({
         title: "Error Summoning Box",
         description:
-          "Could not generate a new loot box image. Using a default.",
+          "Could not get a new loot box image. Using a default.",
         variant: "destructive",
       });
       setBoxImageUrl("https://placehold.co/320x320.png?text=Mystery+Box");
     } finally {
       setIsGeneratingBoxImage(false);
+      setIsUploading(false);
+      setUploadProgress(0);
     }
   };
 
   useEffect(() => {
     fetchNewBoxImage();
-    // TODO: Fetch initial generation count for the user
-  }, []);
+  }, [edgestore]); // Re-fetch if edgestore instance changes (e.g., on initial load)
 
   const handleOpenBox = async () => {
     if (!hasKey) {
-      // hasKey now means wallet is connected and on the right network
       toast({
         title: "Wallet Not Ready!",
         description: "Connect your Farcaster wallet to Monad Testnet.",
@@ -129,21 +164,57 @@ export default function HomePage() {
       });
       return;
     }
+    if (!edgestore) {
+      toast({
+        title: "Storage Service Error",
+        description: "Image storage service is not available. Please try again later.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsInteractingGeneral(true);
     setIsBoxOpening(true);
+    setIsUploading(true);
+    setUploadProgress(0);
 
     try {
       const randomTheme =
         nftThemes[Math.floor(Math.random() * nftThemes.length)];
 
-      const generationResult: GenerateNftArtOutput = await generateNftArt({
+      // 1. Generate NFT image data URI
+      const imageGenResult = await generateDynamicNftImageDataUri({
+        nftBaseName: randomTheme,
+      });
+      const nftImageDataUri = imageGenResult.imageDataUri;
+
+      if (!nftImageDataUri) {
+        throw new Error("Failed to generate NFT image data.");
+      }
+
+      // 2. Upload NFT image data URI to Edgestore
+      const imageFile = await dataUrlToFile(nftImageDataUri, `nft_${address}_${Date.now()}.png`);
+      const uploadRes = await edgestore.publicImages.upload({
+        file: imageFile,
+        onProgressChange: (progress) => {
+          setUploadProgress(progress);
+        },
+      });
+      const nftEdgestoreUrl = uploadRes.url;
+      setIsUploading(false);
+      setUploadProgress(100); // Mark as complete
+
+
+      // 3. Call Genkit flow to process metadata, save to DB, with Edgestore URL
+      const metadataResult: GenerateNftArtOutput = await generateNftArt({
         nftBaseName: randomTheme,
         userWalletAddress: address,
         userDisplayName: farcasterContext?.user?.displayName,
+        nftImageUrl: nftEdgestoreUrl, // Pass the Edgestore URL
       });
 
-      if ("error" in generationResult) {
-        if (generationResult.limitReached) {
+      if ("error" in metadataResult) {
+        if (metadataResult.limitReached) {
           toast({
             title: "Generation Limit Reached",
             description:
@@ -152,7 +223,7 @@ export default function HomePage() {
           });
         } else {
           throw new Error(
-            generationResult.error || "Failed to generate NFT art."
+            metadataResult.error || "Failed to process NFT metadata."
           );
         }
         setIsInteractingGeneral(false);
@@ -160,15 +231,12 @@ export default function HomePage() {
         return;
       }
 
-      const newItem = generationResult as LootItem;
-
+      const newItem = metadataResult as LootItem; // metadataResult is the LootItem
       addLootItemToLocalStorage(newItem);
       setRevealedItem(newItem);
       setIsRevealDialogOpen(true);
 
-      // Reset UI for next box opening, but don't reset hasKey if still connected
-      fetchNewBoxImage();
-      // TODO: Update displayed generation count
+      fetchNewBoxImage(); // Get a new box for next time
     } catch (error: any) {
       console.error("Error opening loot box:", error);
       toast({
@@ -181,6 +249,8 @@ export default function HomePage() {
     } finally {
       setIsInteractingGeneral(false);
       setIsBoxOpening(false);
+      setIsUploading(false);
+      setUploadProgress(0);
     }
   };
 
@@ -210,16 +280,31 @@ export default function HomePage() {
         </Card>
       </div>
 
+      {isUploading && (
+        <div className="w-full max-w-xs my-4">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
+            <UploadCloud className="h-5 w-5 animate-pulse" />
+            Uploading image... {uploadProgress}%
+          </div>
+          <div className="w-full bg-muted rounded-full h-2.5">
+            <div
+              className="bg-primary h-2.5 rounded-full transition-all duration-150"
+              style={{ width: `${uploadProgress}%` }}
+            ></div>
+          </div>
+        </div>
+      )}
+
       <div className="w-full max-w-4xl flex flex-col lg:flex-row items-center justify-around gap-8 lg:gap-16">
         <MysteryBox
           imageUrl={boxImageUrl}
-          isSpinning={isInteractingGeneral && !isBoxOpening && hasKey}
-          isOpening={isBoxOpening}
-          isGeneratingImage={isGeneratingBoxImage}
+          isSpinning={isInteractingGeneral && !isBoxOpening && hasKey && !isUploading}
+          isOpening={isBoxOpening && !isUploading}
+          isGeneratingImage={isGeneratingBoxImage || (isInteractingGeneral && isUploading)}
         />
         <InteractionPanel
           hasKey={hasKey}
-          isBoxOpening={isBoxOpening}
+          isBoxOpening={isBoxOpening || isUploading}
           onOpenBox={handleOpenBox}
         />
       </div>
@@ -245,18 +330,16 @@ export default function HomePage() {
             your wallet connected, open the Monad Loot Box.
           </p>
           <p>
-            3. <strong className="text-accent">Reveal Your NFT:</strong>{" "}
-            Discover a unique, AI-generated NFT. You get 3 free generations!
+            3. <strong className="text-accent">AI Generates & Uploads:</strong>{" "}
+            A unique NFT image is AI-generated and uploaded to secure storage.
           </p>
           <p>
-            4. <strong className="text-accent">Collect & Admire:</strong> Your
-            NFT is saved to your collection (and MongoDB!).
+            4. <strong className="text-accent">Reveal Your NFT:</strong>{" "}
+            Discover your NFT. You get 3 free generations!
           </p>
           <p>
-            5.{" "}
-            <strong className="text-accent">(Optional) Monad Actions:</strong>{" "}
-            Explore other Monad Testnet interactions via the Farcaster Actions
-            panel.
+            5. <strong className="text-accent">Collect & Admire:</strong> Your
+            NFT (with its image URL) is saved to your collection (and MongoDB!).
           </p>
         </CardContent>
       </Card>

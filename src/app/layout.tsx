@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
 import MainLayout from '@/components/layout/MainLayout';
 import { FarcasterProvider } from '@/components/farcaster/FarcasterProvider';
+import { EdgeStoreProvider } from '@/lib/edgestore-provider'; // Corrected path
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
@@ -27,11 +28,13 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased text-foreground bg-background`}>
-        <FarcasterProvider>
-          <MainLayout>
-            {children}
-          </MainLayout>
-        </FarcasterProvider>
+        <EdgeStoreProvider>
+          <FarcasterProvider>
+            <MainLayout>
+              {children}
+            </MainLayout>
+          </FarcasterProvider>
+        </EdgeStoreProvider>
       </body>
     </html>
   );

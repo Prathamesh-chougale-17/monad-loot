@@ -12,6 +12,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@edgestore/react": "^0.2.1",
+    "@edgestore/server": "^0.2.1",
     "@farcaster/auth-client": "^0.3.0",
     "@farcaster/frame-core": "^0.0.36",
     "@farcaster/frame-node": "^0.0.22",
