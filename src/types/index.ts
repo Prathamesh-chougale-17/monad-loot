@@ -6,6 +6,7 @@ export interface LootItem {
   imageUrl: string;
   timestamp: number; 
   price?: number; // Added for marketplace functionality
+  ownerAddress?: string; // Address of the owner
 }
 
 export interface SafeAreaInsets {

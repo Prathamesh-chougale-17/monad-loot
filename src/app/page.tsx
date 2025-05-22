@@ -41,7 +41,7 @@ export default function HomePage() {
   const [revealedItem, setRevealedItem] = useState<LootItem | null>(null);
   const [isRevealDialogOpen, setIsRevealDialogOpen] = useState(false);
   const { toast } = useToast();
-  const { isConnected, chainId } = useAccount();
+  const { address, isConnected, chainId } = useAccount();
 
   useEffect(() => {
     // User "has a key" if wallet is connected, on Monad testnet, AND key action (transaction) is done.
@@ -91,6 +91,10 @@ export default function HomePage() {
       toast({ title: 'Missing Prerequisites!', description: 'Connect to Monad Testnet and perform the required action.', variant: 'destructive' });
       return;
     }
+    if (!address) {
+      toast({ title: 'Wallet Not Connected', description: 'Please ensure your wallet is connected to assign ownership.', variant: 'destructive' });
+      return;
+    }
     setIsInteractingGeneral(true);
     setIsBoxOpening(true);
 
@@ -99,6 +103,8 @@ export default function HomePage() {
       const nftName = `Monad ${randomTheme}`;
       const nftDescription = `A unique ${randomTheme} from the depths of the Monad ecosystem.`;
 
+      // Note: In a production system, you'd upload to cloud storage (e.g., Firebase Storage)
+      // and get a URL instead of using a data URI directly in nftImageUrl.
       const artResult = await generateNftArt({ nftDescription: `A digital artwork of a ${nftName}, ${randomTheme.toLowerCase()} style.` });
       const flavorTextResult = await generateNftFlavorText({ nftName, nftDescription });
 
@@ -106,8 +112,9 @@ export default function HomePage() {
         id: crypto.randomUUID(),
         name: nftName,
         flavorText: flavorTextResult.flavorText,
-        imageUrl: artResult.nftImageUrl, // Updated to use nftImageUrl
+        imageUrl: artResult.nftImageUrl,
         timestamp: Date.now(),
+        ownerAddress: address, // Assign the connected wallet address as the owner
       };
 
       addLootItem(newItem);
@@ -177,7 +184,7 @@ export default function HomePage() {
           <p>1. <strong className="text-accent">Connect Wallet:</strong> Use the Farcaster wallet integration.</p>
           <p>2. <strong className="text-accent">Monad Interaction:</strong> Perform a test transaction on Monad Testnet (this acts as your "key").</p>
           <p>3. <strong className="text-accent">Unlock the Box:</strong> With the prerequisites met, open the Monad Loot Box.</p>
-          <p>4. <strong className="text-accent">Reveal Your NFT:</strong> Discover a unique, AI-generated NFT.</p>
+          <p>4. <strong className="text-accent">Reveal Your NFT:</strong> Discover a unique, AI-generated NFT with your address as owner.</p>
           <p>5. <strong className="text-accent">Collect & Admire:</strong> Your new NFT is added to your personal loot collection.</p>
         </CardContent>
       </Card>
@@ -197,4 +204,3 @@ export default function HomePage() {
     </div>
   );
 }
-
