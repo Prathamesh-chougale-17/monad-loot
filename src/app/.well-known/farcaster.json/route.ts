@@ -11,7 +11,7 @@ export async function GET() {
   },
     frame: {
       version: "1",
-      name: "Monad Farcaster MiniApp Template",
+      name: "Monad Loot",
       iconUrl: `${APP_URL}/images/icon.png`,
       homeUrl: `${APP_URL}`,
       imageUrl: `${APP_URL}/images/feed.png`,
