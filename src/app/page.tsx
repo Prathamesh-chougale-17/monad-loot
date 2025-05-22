@@ -29,7 +29,8 @@ import { useState, useEffect } from "react";
 import { useAccount } from "wagmi";
 import { monadTestnet } from "wagmi/chains";
 import { useMiniAppContext } from "@/hooks/useMiniAppContext";
-import { useEdgeStore } from '@/lib/edgestore-config'; // Edgestore hook, using alias
+import { Progress } from '@/components/ui/progress'; // Keep for general loading states if needed
+
 
 const nftThemes = [
   "Cybernetic Dragon",
@@ -59,29 +60,20 @@ const boxContentDescriptions = [
   "legendary weapons",
 ];
 
-// Helper function to convert data URI to File
-async function dataUrlToFile(dataUrl: string, fileName: string): Promise<File> {
-  const res = await fetch(dataUrl);
-  const blob = await res.blob();
-  return new File([blob], fileName, { type: blob.type });
-}
-
+// Helper function dataUrlToFile is no longer needed as we are not uploading to cloud storage.
 
 export default function HomePage() {
-  const [hasKey, setHasKey] = useState(false); 
+  const [hasKey, setHasKey] = useState(false);
   const [isInteractingGeneral, setIsInteractingGeneral] = useState(false);
   const [isBoxOpening, setIsBoxOpening] = useState(false);
   const [isGeneratingBoxImage, setIsGeneratingBoxImage] = useState(true);
-  const [boxImageUrl, setBoxImageUrl] = useState<string | null>(null);
+  const [boxImageUrl, setBoxImageUrl] = useState<string | null>(null); // Will store data URI
   const [revealedItem, setRevealedItem] = useState<LootItem | null>(null);
   const [isRevealDialogOpen, setIsRevealDialogOpen] = useState(false);
   const { toast } = useToast();
   const { address, isConnected, chainId } = useAccount();
   const { context: farcasterContext } = useMiniAppContext();
-  const { edgestore } = useEdgeStore();
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [isUploading, setIsUploading] = useState(false);
-
+  // Removed useUploadThing and related states (isUploading, uploadProgress)
 
   useEffect(() => {
     if (isConnected && chainId === monadTestnet.id) {
@@ -93,7 +85,7 @@ export default function HomePage() {
 
   const fetchNewBoxImage = async () => {
     setIsGeneratingBoxImage(true);
-    setBoxImageUrl(null); // Clear previous image
+    setBoxImageUrl(null);
     try {
       const randomTheme =
         boxThemes[Math.floor(Math.random() * boxThemes.length)];
@@ -101,51 +93,29 @@ export default function HomePage() {
         boxContentDescriptions[
           Math.floor(Math.random() * boxContentDescriptions.length)
         ];
-      
-      // 1. Generate image data URI using Genkit flow
+
       const genkitResult = await generateLootBoxImage({
         theme: randomTheme,
         contentDescription: randomContent,
       });
-      const imageDataUri = genkitResult.imageDataUri;
-
-      // 2. Upload data URI to Edgestore
-      if (imageDataUri && edgestore) {
-        setIsUploading(true);
-        setUploadProgress(0);
-        const imageFile = await dataUrlToFile(imageDataUri, `lootbox_${Date.now()}.png`);
-        const uploadRes = await edgestore.publicImages.upload({
-          file: imageFile,
-          options: { temporary: true }, // Optional: for faster uploads if not critical persistence yet
-          onProgressChange: (progress) => {
-            setUploadProgress(progress);
-          },
-        });
-        setBoxImageUrl(uploadRes.url);
-        setIsUploading(false);
-      } else {
-         throw new Error("Failed to generate image data or Edgestore not available.");
-      }
-
+      setBoxImageUrl(genkitResult.imageDataUri); // Directly use the data URI
     } catch (error) {
-      console.error("Failed to generate or upload loot box image:", error);
+      console.error("Failed to generate loot box image:", error);
       toast({
         title: "Error Summoning Box",
         description:
           "Could not get a new loot box image. Using a default.",
         variant: "destructive",
       });
-      setBoxImageUrl("https://placehold.co/320x320.png?text=Mystery+Box");
+      setBoxImageUrl("https://placehold.co/320x320.png?text=Mystery+Box"); // Fallback placeholder
     } finally {
       setIsGeneratingBoxImage(false);
-      setIsUploading(false);
-      setUploadProgress(0);
     }
   };
 
   useEffect(() => {
     fetchNewBoxImage();
-  }, [edgestore]); // Re-fetch if edgestore instance changes (e.g., on initial load)
+  }, []); // Fetch on initial load
 
   const handleOpenBox = async () => {
     if (!hasKey) {
@@ -164,19 +134,10 @@ export default function HomePage() {
       });
       return;
     }
-    if (!edgestore) {
-      toast({
-        title: "Storage Service Error",
-        description: "Image storage service is not available. Please try again later.",
-        variant: "destructive",
-      });
-      return;
-    }
 
     setIsInteractingGeneral(true);
     setIsBoxOpening(true);
-    setIsUploading(true);
-    setUploadProgress(0);
+    // Removed setIsUploadingState and setUploadProgress
 
     try {
       const randomTheme =
@@ -192,25 +153,12 @@ export default function HomePage() {
         throw new Error("Failed to generate NFT image data.");
       }
 
-      // 2. Upload NFT image data URI to Edgestore
-      const imageFile = await dataUrlToFile(nftImageDataUri, `nft_${address}_${Date.now()}.png`);
-      const uploadRes = await edgestore.publicImages.upload({
-        file: imageFile,
-        onProgressChange: (progress) => {
-          setUploadProgress(progress);
-        },
-      });
-      const nftEdgestoreUrl = uploadRes.url;
-      setIsUploading(false);
-      setUploadProgress(100); // Mark as complete
-
-
-      // 3. Call Genkit flow to process metadata, save to DB, with Edgestore URL
+      // 2. Call Genkit flow to process metadata (now accepts data URI)
       const metadataResult: GenerateNftArtOutput = await generateNftArt({
         nftBaseName: randomTheme,
         userWalletAddress: address,
         userDisplayName: farcasterContext?.user?.displayName,
-        nftImageUrl: nftEdgestoreUrl, // Pass the Edgestore URL
+        nftImageDataUri: nftImageDataUri, // Pass the data URI directly
       });
 
       if ("error" in metadataResult) {
@@ -231,8 +179,8 @@ export default function HomePage() {
         return;
       }
 
-      const newItem = metadataResult as LootItem; // metadataResult is the LootItem
-      addLootItemToLocalStorage(newItem);
+      const newItem = metadataResult as LootItem;
+      addLootItemToLocalStorage(newItem); // Save to localStorage (image is data URI)
       setRevealedItem(newItem);
       setIsRevealDialogOpen(true);
 
@@ -249,8 +197,7 @@ export default function HomePage() {
     } finally {
       setIsInteractingGeneral(false);
       setIsBoxOpening(false);
-      setIsUploading(false);
-      setUploadProgress(0);
+      // Removed setIsUploadingState(false) and setUploadProgress(0)
     }
   };
 
@@ -280,31 +227,18 @@ export default function HomePage() {
         </Card>
       </div>
 
-      {isUploading && (
-        <div className="w-full max-w-xs my-4">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground mb-1">
-            <UploadCloud className="h-5 w-5 animate-pulse" />
-            Uploading image... {uploadProgress}%
-          </div>
-          <div className="w-full bg-muted rounded-full h-2.5">
-            <div
-              className="bg-primary h-2.5 rounded-full transition-all duration-150"
-              style={{ width: `${uploadProgress}%` }}
-            ></div>
-          </div>
-        </div>
-      )}
+      {/* Removed Uploading progress UI */}
 
       <div className="w-full max-w-4xl flex flex-col lg:flex-row items-center justify-around gap-8 lg:gap-16">
         <MysteryBox
-          imageUrl={boxImageUrl}
-          isSpinning={isInteractingGeneral && !isBoxOpening && hasKey && !isUploading}
-          isOpening={isBoxOpening && !isUploading}
-          isGeneratingImage={isGeneratingBoxImage || (isInteractingGeneral && isUploading)}
+          imageUrl={boxImageUrl} // This will be a data URI
+          isSpinning={isInteractingGeneral && !isBoxOpening && hasKey}
+          isOpening={isBoxOpening}
+          isGeneratingImage={isGeneratingBoxImage || isInteractingGeneral}
         />
         <InteractionPanel
           hasKey={hasKey}
-          isBoxOpening={isBoxOpening || isUploading}
+          isBoxOpening={isBoxOpening}
           onOpenBox={handleOpenBox}
         />
       </div>
@@ -330,16 +264,16 @@ export default function HomePage() {
             your wallet connected, open the Monad Loot Box.
           </p>
           <p>
-            3. <strong className="text-accent">AI Generates & Uploads:</strong>{" "}
-            A unique NFT image is AI-generated and uploaded to secure storage.
+            3. <strong className="text-accent">AI Generates:</strong> A unique
+            NFT image is AI-generated (as a data URI).
           </p>
           <p>
             4. <strong className="text-accent">Reveal Your NFT:</strong>{" "}
-            Discover your NFT. You get 3 free generations!
+            Discover your NFT. Its metadata (including the image data URI) is saved to MongoDB. You get 3 free generations!
           </p>
           <p>
             5. <strong className="text-accent">Collect & Admire:</strong> Your
-            NFT (with its image URL) is saved to your collection (and MongoDB!).
+            NFT is saved to your local collection.
           </p>
         </CardContent>
       </Card>
