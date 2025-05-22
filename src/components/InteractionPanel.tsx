@@ -1,57 +1,47 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { KeyRound, PackageOpen, Loader2 } from 'lucide-react';
+import { PackageOpen, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { WalletActions } from '@/components/farcaster/WalletActions';
 
 interface InteractionPanelProps {
-  hasKey: boolean;
-  isInteracting: boolean; // General loading state for key acquisition or box opening
+  hasKey: boolean; // True if wallet connected to Monad Testnet & potentially after a specific action
   isBoxOpening: boolean; // Specific state for box opening animation/process
-  onGetKey: () => void;
   onOpenBox: () => void;
+  onTransactionSuccessForKey?: (hash: string) => void; // Callback when key-granting transaction is successful
 }
 
 export default function InteractionPanel({
   hasKey,
-  isInteracting,
   isBoxOpening,
-  onGetKey,
   onOpenBox,
+  onTransactionSuccessForKey,
 }: InteractionPanelProps) {
   return (
     <Card className="w-full max-w-md shadow-xl bg-card/80 backdrop-blur-sm">
       <CardHeader>
         <CardTitle className="text-2xl text-center text-primary">Control Panel</CardTitle>
         <CardDescription className="text-center">
-          {hasKey ? "You have a key! Ready to unlock?" : "Acquire a key to open the Monad Loot Box."}
+          {hasKey 
+            ? "You're ready to unlock the Monad Loot Box!" 
+            : "Connect your Farcaster wallet and interact with Monad Testnet to proceed."}
         </CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {!hasKey && (
-          <Button
-            onClick={onGetKey}
-            disabled={isInteracting || hasKey}
-            size="lg"
-            className="w-full bg-accent hover:bg-accent/90 text-accent-foreground"
-          >
-            {isInteracting && !isBoxOpening ? (
-              <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-            ) : (
-              <KeyRound className="mr-2 h-5 w-5" />
-            )}
-            Simulate Monad Interaction & Get Key
-          </Button>
+          <WalletActions onTransactionSuccess={onTransactionSuccessForKey} />
         )}
+        
         {hasKey && (
           <Button
             onClick={onOpenBox}
-            disabled={isInteracting || !hasKey}
+            disabled={isBoxOpening} // Only disable if box is currently opening
             size="lg"
             variant="default"
             className="w-full bg-primary hover:bg-primary/90"
           >
-            {isInteracting && isBoxOpening ? (
+            {isBoxOpening ? (
               <Loader2 className="mr-2 h-5 w-5 animate-spin" />
             ) : (
               <PackageOpen className="mr-2 h-5 w-5" />
