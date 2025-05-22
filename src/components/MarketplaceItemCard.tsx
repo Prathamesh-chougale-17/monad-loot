@@ -6,7 +6,7 @@ import type { LootItem } from '@/types';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Tag, ShoppingBag, UserCircle } from 'lucide-react'; // Using Tag for price
+import { Tag, ShoppingBag, UserCircle, UserSquare2 } from 'lucide-react'; // Added UserSquare2 for creator
 
 interface MarketplaceItemCardProps {
   item: LootItem;
@@ -25,7 +25,7 @@ export default function MarketplaceItemCard({ item, onBuy }: MarketplaceItemCard
       <CardHeader className="p-4">
         <CardTitle className="text-xl truncate text-primary">{item.name}</CardTitle>
       </CardHeader>
-      <CardContent className="p-4 flex-grow flex flex-col gap-3"> {/* Reduced gap slightly */}
+      <CardContent className="p-4 flex-grow flex flex-col gap-3">
         <div className="aspect-square w-full relative rounded-md overflow-hidden border border-border">
           <Image
             src={item.imageUrl}
@@ -36,7 +36,7 @@ export default function MarketplaceItemCard({ item, onBuy }: MarketplaceItemCard
             data-ai-hint="digital art collectible"
           />
         </div>
-        <ScrollArea className="h-16"> {/* Adjusted height for description */}
+        <ScrollArea className="h-16"> 
           <CardDescription className="text-sm text-muted-foreground leading-relaxed">
             {item.flavorText}
           </CardDescription>
@@ -44,7 +44,13 @@ export default function MarketplaceItemCard({ item, onBuy }: MarketplaceItemCard
         {item.ownerAddress && (
           <div className="flex items-center text-xs text-muted-foreground">
             <UserCircle className="h-4 w-4 mr-1.5 text-accent" />
-            Owner: {truncateAddress(item.ownerAddress)}
+            Current Seller: {truncateAddress(item.ownerAddress)}
+          </div>
+        )}
+         {item.creatorAddress && (
+           <div className="flex items-center text-xs text-muted-foreground pt-1">
+            <UserSquare2 className="h-4 w-4 mr-2 text-primary" />
+            Creator: {item.creatorName || truncateAddress(item.creatorAddress)}
           </div>
         )}
         <div className="flex items-center text-lg font-semibold text-accent mt-1">

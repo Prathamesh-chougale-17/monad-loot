@@ -1,6 +1,8 @@
+
 import { config } from 'dotenv';
-config();
+config({ path: '../../.env.local' }); // Ensure .env.local is loaded if dev.ts is run from src/ai
 
 import '@/ai/flows/generate-nft-art.ts';
 import '@/ai/flows/generate-loot-box-image.ts';
 import '@/ai/flows/generate-nft-flavor-text.ts';
+// Add any new flows here if you create them, e.g., for fetching generation counts

@@ -4,22 +4,22 @@
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { PackageSearch, Sparkles, ArrowRight, ExternalLink } from 'lucide-react';
+import { PackageSearch, Sparkles, ArrowRight, ExternalLink, Info } from 'lucide-react';
 import MysteryBox from '@/components/MysteryBox';
 import InteractionPanel from '@/components/InteractionPanel';
 import LootRevealDialog from '@/components/LootRevealDialog';
 import { UserDisplay } from '@/components/farcaster/UserDisplay';
 import { FarcasterActionsDisplay } from '@/components/farcaster/FarcasterActionsDisplay';
 import { useToast } from '@/hooks/use-toast';
-import { addLootItem } from '@/lib/localStorage';
+import { addLootItemToLocalStorage } from '@/lib/localStorage'; // Renamed for clarity
 import type { LootItem } from '@/types';
-import { generateNftArt } from '@/ai/flows/generate-nft-art';
-import { generateNftFlavorText } from '@/ai/flows/generate-nft-flavor-text';
+import { generateNftArt, type GenerateNftArtOutput } from '@/ai/flows/generate-nft-art';
+// import { generateNftFlavorText } from '@/ai/flows/generate-nft-flavor-text'; // Now handled within generateNftArt flow
 import { generateLootBoxImage } from '@/ai/flows/generate-loot-box-image';
 import { useState, useEffect } from 'react';
 import { useAccount } from 'wagmi';
 import { monadTestnet } from 'wagmi/chains';
-
+import { useMiniAppContext } from '@/hooks/useMiniAppContext'; // For user display name
 
 const nftThemes = [
   "Cybernetic Dragon", "Cosmic Artifact", "Mystical Forest Spirit", "Steampunk Golem", "Ancient Relic",
@@ -32,9 +32,9 @@ const boxContentDescriptions = [
 ];
 
 export default function HomePage() {
-  const [hasKey, setHasKey] = useState(false); // User has "key" if connected to Monad testnet and performed an action
-  const [isKeyActionDone, setIsKeyActionDone] = useState(false); // Tracks if the key-awarding transaction was successful
-  const [isInteractingGeneral, setIsInteractingGeneral] = useState(false); // General interaction lock (e.g. box opening)
+  const [hasKey, setHasKey] = useState(false);
+  const [isKeyActionDone, setIsKeyActionDone] = useState(false);
+  const [isInteractingGeneral, setIsInteractingGeneral] = useState(false); 
   const [isBoxOpening, setIsBoxOpening] = useState(false); 
   const [isGeneratingBoxImage, setIsGeneratingBoxImage] = useState(true);
   const [boxImageUrl, setBoxImageUrl] = useState<string | null>(null);
@@ -42,9 +42,11 @@ export default function HomePage() {
   const [isRevealDialogOpen, setIsRevealDialogOpen] = useState(false);
   const { toast } = useToast();
   const { address, isConnected, chainId } = useAccount();
+  const { context: farcasterContext } = useMiniAppContext(); // Get Farcaster context for user display name
+
+  // TODO: Add state and effect to fetch and display remaining generations
 
   useEffect(() => {
-    // User "has a key" if wallet is connected, on Monad testnet, AND key action (transaction) is done.
     if (isConnected && chainId === monadTestnet.id && isKeyActionDone) {
       setHasKey(true);
     } else {
@@ -74,11 +76,12 @@ export default function HomePage() {
 
   useEffect(() => {
     fetchNewBoxImage();
+    // TODO: Fetch initial generation count for the user
   }, []);
 
   const handleTransactionSuccessForKey = (txHash: string) => {
     console.log("Transaction successful for key:", txHash);
-    setIsKeyActionDone(true); // Mark that the action to get the key is done
+    setIsKeyActionDone(true); 
     toast({
       title: 'Monad Interaction Complete!',
       description: 'You are now ready to open the loot box.',
@@ -92,7 +95,7 @@ export default function HomePage() {
       return;
     }
     if (!address) {
-      toast({ title: 'Wallet Not Connected', description: 'Please ensure your wallet is connected to assign ownership.', variant: 'destructive' });
+      toast({ title: 'Wallet Not Connected', description: 'Please ensure your wallet is connected.', variant: 'destructive' });
       return;
     }
     setIsInteractingGeneral(true);
@@ -100,36 +103,45 @@ export default function HomePage() {
 
     try {
       const randomTheme = nftThemes[Math.floor(Math.random() * nftThemes.length)];
-      const nftName = `Monad ${randomTheme}`;
-      const nftDescription = `A unique ${randomTheme} from the depths of the Monad ecosystem.`;
+      
+      const generationResult: GenerateNftArtOutput = await generateNftArt({ 
+        nftBaseName: randomTheme,
+        userWalletAddress: address,
+        userDisplayName: farcasterContext?.user?.displayName 
+      });
 
-      // Note: In a production system, you'd upload to cloud storage (e.g., Firebase Storage)
-      // and get a URL instead of using a data URI directly in nftImageUrl.
-      const artResult = await generateNftArt({ nftDescription: `A digital artwork of a ${nftName}, ${randomTheme.toLowerCase()} style.` });
-      const flavorTextResult = await generateNftFlavorText({ nftName, nftDescription });
+      if ('error' in generationResult) {
+        if (generationResult.limitReached) {
+          toast({
+            title: 'Generation Limit Reached',
+            description: "You've used all your free NFT generations. Please come back later!",
+            variant: 'destructive',
+          });
+        } else {
+          throw new Error(generationResult.error || 'Failed to generate NFT art.');
+        }
+        setIsInteractingGeneral(false);
+        setIsBoxOpening(false);
+        return;
+      }
+      
+      // The result is a LootItem if successful
+      const newItem = generationResult as LootItem;
 
-      const newItem: LootItem = {
-        id: crypto.randomUUID(),
-        name: nftName,
-        flavorText: flavorTextResult.flavorText,
-        imageUrl: artResult.nftImageUrl,
-        timestamp: Date.now(),
-        ownerAddress: address, // Assign the connected wallet address as the owner
-      };
-
-      addLootItem(newItem);
+      addLootItemToLocalStorage(newItem); // Add to localStorage for current UI compatibility
       setRevealedItem(newItem);
       setIsRevealDialogOpen(true);
-      // Reset key status so user has to "get key" again for next box
+      
       setIsKeyActionDone(false); 
       setHasKey(false);
       fetchNewBoxImage(); 
+      // TODO: Update displayed generation count
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error opening loot box:', error);
       toast({
         title: 'Opening Failed',
-        description: 'Something went wrong while unveiling your loot. Please try again.',
+        description: error.message || 'Something went wrong while unveiling your loot. Please try again.',
         variant: 'destructive',
       });
     } finally {
@@ -153,12 +165,20 @@ export default function HomePage() {
         <p className="max-w-2xl text-lg md:text-xl text-muted-foreground">
           Connect your Farcaster wallet, interact with the Monad Testnet, unlock enigmatic Loot Boxes, and claim your unique AI-generated NFTs.
         </p>
+        <Card className="bg-card/70 backdrop-blur-sm border-accent mt-2">
+          <CardContent className="p-3">
+            <p className="text-sm text-accent-foreground flex items-center gap-2">
+              <Info className="h-5 w-5 text-accent" />
+              You have 3 free NFT generations! Use them wisely.
+            </p>
+          </CardContent>
+        </Card>
       </div>
 
       <div className="w-full max-w-4xl flex flex-col lg:flex-row items-center justify-around gap-8 lg:gap-16">
         <MysteryBox
           imageUrl={boxImageUrl}
-          isSpinning={isInteractingGeneral && !isBoxOpening && hasKey} // Spin only if interacting towards opening
+          isSpinning={isInteractingGeneral && !isBoxOpening && hasKey}
           isOpening={isBoxOpening}
           isGeneratingImage={isGeneratingBoxImage}
         />
@@ -184,8 +204,8 @@ export default function HomePage() {
           <p>1. <strong className="text-accent">Connect Wallet:</strong> Use the Farcaster wallet integration.</p>
           <p>2. <strong className="text-accent">Monad Interaction:</strong> Perform a test transaction on Monad Testnet (this acts as your "key").</p>
           <p>3. <strong className="text-accent">Unlock the Box:</strong> With the prerequisites met, open the Monad Loot Box.</p>
-          <p>4. <strong className="text-accent">Reveal Your NFT:</strong> Discover a unique, AI-generated NFT with your address as owner.</p>
-          <p>5. <strong className="text-accent">Collect & Admire:</strong> Your new NFT is added to your personal loot collection.</p>
+          <p>4. <strong className="text-accent">Reveal Your NFT:</strong> Discover a unique, AI-generated NFT. You get 3 free generations!</p>
+          <p>5. <strong className="text-accent">Collect & Admire:</strong> Your NFT is saved to your collection (and MongoDB!).</p>
         </CardContent>
       </Card>
 
