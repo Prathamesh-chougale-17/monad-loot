@@ -32,7 +32,11 @@ export function saveCollectedLootToLocalStorage(loot: LootItem[]): void {
 
 export function addLootItemToLocalStorage(item: LootItem): LootItem[] {
   const currentLoot = getCollectedLootFromLocalStorage();
-  const updatedLoot = [item, ...currentLoot]; 
+  // Prevent adding duplicates if item with same ID already exists
+  if (currentLoot.find(i => i.id === item.id)) {
+    return currentLoot;
+  }
+  const updatedLoot = [item, ...currentLoot];
   saveCollectedLootToLocalStorage(updatedLoot);
   return updatedLoot;
 }
@@ -64,6 +68,7 @@ export function saveMarketplaceListedItemsToLocalStorage(items: LootItem[]): voi
 }
 
 export function listLootItemForSaleInLocalStorage(itemToList: LootItem, price: number): void {
+  if (typeof window === 'undefined') return;
   // 1. Remove from personal collection
   let collectedLoot = getCollectedLootFromLocalStorage();
   collectedLoot = collectedLoot.filter(item => item.id !== itemToList.id);
@@ -76,6 +81,7 @@ export function listLootItemForSaleInLocalStorage(itemToList: LootItem, price: n
 }
 
 export function buyLootItemFromMarketplaceInLocalStorage(itemToBuy: LootItem, buyerAddress: string): LootItem | null {
+  if (typeof window === 'undefined') return null;
   // 1. Remove from marketplace
   let marketplaceItems = getMarketplaceListedItemsFromLocalStorage();
   const itemExistsInMarket = marketplaceItems.find(item => item.id === itemToBuy.id);
@@ -90,4 +96,18 @@ export function buyLootItemFromMarketplaceInLocalStorage(itemToBuy: LootItem, bu
   const boughtItem = { ...itemToBuy, ownerAddress: buyerAddress, price: undefined }; // Clear price after buying
   addLootItemToLocalStorage(boughtItem);
   return boughtItem;
+}
+
+// === Clear All Loot ===
+export function clearAllLootFromLocalStorage(): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  try {
+    localStorage.removeItem(COLLECTED_LOOT_STORAGE_KEY);
+    localStorage.removeItem(MARKETPLACE_ITEMS_STORAGE_KEY);
+    console.log("All NFT data cleared from localStorage.");
+  } catch (error) {
+    console.error("Failed to clear all loot from localStorage:", error);
+  }
 }

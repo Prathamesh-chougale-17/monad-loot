@@ -10,7 +10,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { PackageSearch, Sparkles, ArrowRight, Info, UploadCloud } from "lucide-react";
+import { PackageSearch, Sparkles, ArrowRight, Info, UploadCloud, RotateCcw } from "lucide-react";
 import MysteryBox from "@/components/MysteryBox";
 import InteractionPanel from "@/components/InteractionPanel";
 import LootRevealDialog from "@/components/LootRevealDialog";
@@ -29,7 +29,7 @@ import { useState, useEffect } from "react";
 import { useAccount } from "wagmi";
 import { monadTestnet } from "wagmi/chains";
 import { useMiniAppContext } from "@/hooks/useMiniAppContext";
-import { Progress } from '@/components/ui/progress'; // Keep for general loading states if needed
+import { Progress } from '@/components/ui/progress';
 
 
 const nftThemes = [
@@ -60,22 +60,33 @@ const boxContentDescriptions = [
   "legendary weapons",
 ];
 
-// Helper function dataUrlToFile is no longer needed as we are not uploading to cloud storage.
+// Helper function to convert data URI to File object
+// This is needed for Uploadthing or other services that expect a File.
+// For direct data URI storage, this function is not strictly needed by the backend,
+// but it's good practice if you were to switch back to file uploads.
+async function dataUrlToFile(dataUrl: string, fileName: string): Promise<File> {
+  const res = await fetch(dataUrl);
+  const blob = await res.blob();
+  return new File([blob], fileName, { type: blob.type });
+}
+
 
 export default function HomePage() {
-  const [hasKey, setHasKey] = useState(false);
-  const [isInteractingGeneral, setIsInteractingGeneral] = useState(false);
-  const [isBoxOpening, setIsBoxOpening] = useState(false);
+  const [hasKey, setHasKey] = useState(false); // True if wallet connected to Monad Testnet
+  const [isInteractingGeneral, setIsInteractingGeneral] = useState(false); // General loading/interacting state
+  const [isBoxOpening, setIsBoxOpening] = useState(false); // Specific state for box opening animation
   const [isGeneratingBoxImage, setIsGeneratingBoxImage] = useState(true);
   const [boxImageUrl, setBoxImageUrl] = useState<string | null>(null); // Will store data URI
   const [revealedItem, setRevealedItem] = useState<LootItem | null>(null);
   const [isRevealDialogOpen, setIsRevealDialogOpen] = useState(false);
+
   const { toast } = useToast();
   const { address, isConnected, chainId } = useAccount();
   const { context: farcasterContext } = useMiniAppContext();
-  // Removed useUploadThing and related states (isUploading, uploadProgress)
+
 
   useEffect(() => {
+    // User "has a key" if wallet is connected and on Monad Testnet
     if (isConnected && chainId === monadTestnet.id) {
       setHasKey(true);
     } else {
@@ -85,26 +96,23 @@ export default function HomePage() {
 
   const fetchNewBoxImage = async () => {
     setIsGeneratingBoxImage(true);
-    setBoxImageUrl(null);
+    setBoxImageUrl(null); // Clear previous image
     try {
-      const randomTheme =
-        boxThemes[Math.floor(Math.random() * boxThemes.length)];
-      const randomContent =
-        boxContentDescriptions[
-          Math.floor(Math.random() * boxContentDescriptions.length)
-        ];
+      const randomTheme = boxThemes[Math.floor(Math.random() * boxThemes.length)];
+      const randomContent = boxContentDescriptions[Math.floor(Math.random() * boxContentDescriptions.length)];
 
       const genkitResult = await generateLootBoxImage({
         theme: randomTheme,
         contentDescription: randomContent,
       });
+
       setBoxImageUrl(genkitResult.imageDataUri); // Directly use the data URI
+
     } catch (error) {
       console.error("Failed to generate loot box image:", error);
       toast({
         title: "Error Summoning Box",
-        description:
-          "Could not get a new loot box image. Using a default.",
+        description: "Could not get a new loot box image. Using a default.",
         variant: "destructive",
       });
       setBoxImageUrl("https://placehold.co/320x320.png?text=Mystery+Box"); // Fallback placeholder
@@ -137,11 +145,9 @@ export default function HomePage() {
 
     setIsInteractingGeneral(true);
     setIsBoxOpening(true);
-    // Removed setIsUploadingState and setUploadProgress
 
     try {
-      const randomTheme =
-        nftThemes[Math.floor(Math.random() * nftThemes.length)];
+      const randomTheme = nftThemes[Math.floor(Math.random() * nftThemes.length)];
 
       // 1. Generate NFT image data URI
       const imageGenResult = await generateDynamicNftImageDataUri({
@@ -153,7 +159,7 @@ export default function HomePage() {
         throw new Error("Failed to generate NFT image data.");
       }
 
-      // 2. Call Genkit flow to process metadata (now accepts data URI)
+      // 2. Call Genkit flow to process metadata (accepts data URI)
       const metadataResult: GenerateNftArtOutput = await generateNftArt({
         nftBaseName: randomTheme,
         userWalletAddress: address,
@@ -165,22 +171,21 @@ export default function HomePage() {
         if (metadataResult.limitReached) {
           toast({
             title: "Generation Limit Reached",
-            description:
-              "You've used all your free NFT generations for now. Please come back later!",
+            description: "You've used all your free NFT generations for now. Please come back later!",
             variant: "destructive",
+            duration: 5000,
           });
         } else {
-          throw new Error(
-            metadataResult.error || "Failed to process NFT metadata."
-          );
+          throw new Error(metadataResult.error || "Failed to process NFT metadata.");
         }
         setIsInteractingGeneral(false);
         setIsBoxOpening(false);
         return;
       }
 
-      const newItem = metadataResult as LootItem;
-      addLootItemToLocalStorage(newItem); // Save to localStorage (image is data URI)
+      const newItem = metadataResult as LootItem; // Successful generation, result is a LootItem
+      console.log("Attempting to add to localStorage:", newItem); // DEBUG LOG
+      addLootItemToLocalStorage(newItem); // Save to localStorage
       setRevealedItem(newItem);
       setIsRevealDialogOpen(true);
 
@@ -189,15 +194,12 @@ export default function HomePage() {
       console.error("Error opening loot box:", error);
       toast({
         title: "Opening Failed",
-        description:
-          error.message ||
-          "Something went wrong while unveiling your loot. Please try again.",
+        description: error.message || "Something went wrong while unveiling your loot. Please try again.",
         variant: "destructive",
       });
     } finally {
       setIsInteractingGeneral(false);
       setIsBoxOpening(false);
-      // Removed setIsUploadingState(false) and setUploadProgress(0)
     }
   };
 
@@ -227,7 +229,6 @@ export default function HomePage() {
         </Card>
       </div>
 
-      {/* Removed Uploading progress UI */}
 
       <div className="w-full max-w-4xl flex flex-col lg:flex-row items-center justify-around gap-8 lg:gap-16">
         <MysteryBox
