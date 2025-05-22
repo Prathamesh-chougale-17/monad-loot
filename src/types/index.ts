@@ -4,9 +4,9 @@ export interface LootItem {
   name: string;
   flavorText: string;
   imageUrl: string; // Can be data URI or HTTPS URL
-  timestamp: number; 
-  price?: number; 
-  ownerAddress?: string; 
+  timestamp: number;
+  price?: number;
+  ownerAddress?: string;
   creatorAddress?: string; // Wallet address of the user who generated/created the item
   creatorName?: string; // Display name of the creator (e.g., from Farcaster)
 }
@@ -38,4 +38,11 @@ export interface UserGenerationDoc {
   generationsUsed: number;
   nftGenerationLimit: number; // e.g., 3
   lastGenerationTimestamp?: number;
+}
+
+// For GetUserGenerationStatus flow
+export interface UserGenerationStatusOutput {
+  generationsUsed: number;
+  nftGenerationLimit: number;
+  canGenerateForFree: boolean;
 }

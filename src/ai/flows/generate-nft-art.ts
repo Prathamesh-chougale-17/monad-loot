@@ -21,7 +21,8 @@ const GenerateNftArtInputSchema = z.object({
   nftBaseName: z.string().describe('The base name or theme for the NFT (e.g., "Cosmic Artifact").'),
   userWalletAddress: z.string().describe("The wallet address of the user requesting the NFT generation."),
   userDisplayName: z.string().optional().describe("The display name of the user (e.g., from Farcaster)."),
-  nftImageDataUri: z.string().describe("The NFT image as a data URI. Format: 'data:<mimetype>;base64,<encoded_data>'.")
+  nftImageDataUri: z.string().describe("The NFT image as a data URI. Format: 'data:<mimetype>;base64,<encoded_data>'."),
+  isFreeGeneration: z.boolean().describe("Indicates if this generation is a free one (counts towards limit).")
 });
 export type GenerateNftArtInput = z.infer<typeof GenerateNftArtInputSchema>;
 
@@ -37,7 +38,7 @@ const GenerateNftArtOutputSchema = z.union([
     creatorAddress: z.string().optional(),
     creatorName: z.string().optional(),
   }),
-  z.object({ error: z.string(), limitReached: z.boolean().optional() })
+  z.object({ error: z.string() }) // Removed limitReached as frontend handles this check primarily
 ]);
 
 export type GenerateNftArtOutput = z.infer<typeof GenerateNftArtOutputSchema>;
@@ -54,7 +55,7 @@ const generateNftArtFlow = ai.defineFlow(
     outputSchema: GenerateNftArtOutputSchema,
   },
   async (input) => {
-    const { nftBaseName, userWalletAddress, userDisplayName, nftImageDataUri } = input;
+    const { nftBaseName, userWalletAddress, userDisplayName, nftImageDataUri, isFreeGeneration } = input;
 
     try {
       const mongoClient = await clientPromise;
@@ -62,21 +63,25 @@ const generateNftArtFlow = ai.defineFlow(
       const userGenerationsCollection = db.collection<UserGenerationDoc>('userGenerations');
       const nftsCollection = db.collection<NftDocument>('nfts');
 
-      // 1. Check generation limit
-      let userGenerationData = await userGenerationsCollection.findOne({ walletAddress: userWalletAddress });
-
-      if (!userGenerationData) {
-        userGenerationData = {
-          walletAddress: userWalletAddress,
-          generationsUsed: 0,
-          nftGenerationLimit: NFT_GENERATION_LIMIT,
-        };
-        await userGenerationsCollection.insertOne(userGenerationData);
+      // Ensure user generation record exists if it's a free generation that needs to be tracked
+      if (isFreeGeneration) {
+        let userGenerationData = await userGenerationsCollection.findOne({ walletAddress: userWalletAddress });
+        if (!userGenerationData) {
+          userGenerationData = {
+            walletAddress: userWalletAddress,
+            generationsUsed: 0,
+            nftGenerationLimit: NFT_GENERATION_LIMIT,
+          };
+          await userGenerationsCollection.insertOne(userGenerationData);
+        }
+        // Double-check limit here for safety, though frontend should gate this
+        if (userGenerationData.generationsUsed >= userGenerationData.nftGenerationLimit) {
+            // This case should ideally not be hit if frontend logic is correct.
+            // If it is, it means a free generation was attempted when it shouldn't have been.
+            return { error: 'Free generation limit already reached. This attempt was not recorded.' };
+        }
       }
 
-      if (userGenerationData.generationsUsed >= userGenerationData.nftGenerationLimit) {
-        return { error: 'NFT generation limit reached for this address.', limitReached: true };
-      }
 
       // 2. NFT Name
       const nftName = `Monad ${nftBaseName}`;
@@ -84,7 +89,7 @@ const generateNftArtFlow = ai.defineFlow(
       // 3. Generate Flavor Text
       const flavorTextResult = await generateNftFlavorText({
         nftName,
-        nftDescription: `A unique ${nftBaseName} from the depths of the Monad ecosystem, owned by ${userDisplayName || userWalletAddress}. Its essence captured as an image.`
+        nftDescription: `A unique ${nftBaseName} from the depths of the Monad ecosystem, created by ${userDisplayName || userWalletAddress}. Its essence captured as an image.`
       });
 
       // 4. Create NFT Document
@@ -97,7 +102,7 @@ const generateNftArtFlow = ai.defineFlow(
         flavorText: flavorTextResult.flavorText,
         imageUrl: nftImageDataUri, // Store the data URI
         timestamp,
-        ownerAddress: userWalletAddress,
+        ownerAddress: userWalletAddress, // Initial owner is the creator
         creatorAddress: userWalletAddress,
         creatorName: userDisplayName,
         theme: nftBaseName,
@@ -106,11 +111,13 @@ const generateNftArtFlow = ai.defineFlow(
       // 5. Save NFT to MongoDB
       await nftsCollection.insertOne(nftDocument);
 
-      // 6. Increment generation count
-      await userGenerationsCollection.updateOne(
-        { walletAddress: userWalletAddress },
-        { $inc: { generationsUsed: 1 }, $set: { lastGenerationTimestamp: timestamp } }
-      );
+      // 6. Increment generation count ONLY if it's a free generation
+      if (isFreeGeneration) {
+        await userGenerationsCollection.updateOne(
+          { walletAddress: userWalletAddress },
+          { $inc: { generationsUsed: 1 }, $set: { lastGenerationTimestamp: timestamp } }
+        );
+      }
 
       // 7. Return the created LootItem structure
       const createdLootItem: LootItem = {
@@ -127,9 +134,6 @@ const generateNftArtFlow = ai.defineFlow(
 
     } catch (error: any) {
       console.error('Error in generateNftArtFlow:', error);
-      if (error.message && error.message.includes('limit reached')) {
-        return { error: error.message, limitReached: true };
-      }
       return { error: error.message || 'An unexpected error occurred during NFT processing.' };
     }
   }

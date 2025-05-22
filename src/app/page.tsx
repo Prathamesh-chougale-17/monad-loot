@@ -10,7 +10,18 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { PackageSearch, Sparkles, ArrowRight, Info, UploadCloud, RotateCcw } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { PackageSearch, Sparkles, ArrowRight, Info, UploadCloud, RotateCcw, Loader2 } from "lucide-react";
 import MysteryBox from "@/components/MysteryBox";
 import InteractionPanel from "@/components/InteractionPanel";
 import LootRevealDialog from "@/components/LootRevealDialog";
@@ -18,18 +29,20 @@ import { UserDisplay } from "@/components/farcaster/UserDisplay";
 import { FarcasterActionsDisplay } from "@/components/farcaster/FarcasterActionsDisplay";
 import { useToast } from "@/hooks/use-toast";
 import { addLootItemToLocalStorage } from "@/lib/localStorage";
-import type { LootItem } from "@/types";
+import type { LootItem, UserGenerationStatusOutput } from "@/types";
 import {
   generateNftArt,
   type GenerateNftArtOutput,
 } from "@/ai/flows/generate-nft-art";
+import { getUserGenerationStatus } from "@/ai/flows/get-user-generation-status";
 import { generateLootBoxImage } from "@/ai/flows/generate-loot-box-image";
 import { generateDynamicNftImageDataUri } from "@/ai/flows/generate-dynamic-nft-image-data-uri";
 import { useState, useEffect } from "react";
-import { useAccount } from "wagmi";
+import { useAccount, useSendTransaction } from "wagmi";
 import { monadTestnet } from "wagmi/chains";
 import { useMiniAppContext } from "@/hooks/useMiniAppContext";
-import { Progress } from '@/components/ui/progress';
+import { NFT_GENERATION_COST_MONAD, TREASURY_ADDRESS } from "@/lib/constants";
+import { parseEther } from "viem";
 
 
 const nftThemes = [
@@ -60,33 +73,27 @@ const boxContentDescriptions = [
   "legendary weapons",
 ];
 
-// Helper function to convert data URI to File object
-// This is needed for Uploadthing or other services that expect a File.
-// For direct data URI storage, this function is not strictly needed by the backend,
-// but it's good practice if you were to switch back to file uploads.
-async function dataUrlToFile(dataUrl: string, fileName: string): Promise<File> {
-  const res = await fetch(dataUrl);
-  const blob = await res.blob();
-  return new File([blob], fileName, { type: blob.type });
-}
-
-
 export default function HomePage() {
-  const [hasKey, setHasKey] = useState(false); // True if wallet connected to Monad Testnet
-  const [isInteractingGeneral, setIsInteractingGeneral] = useState(false); // General loading/interacting state
-  const [isBoxOpening, setIsBoxOpening] = useState(false); // Specific state for box opening animation
+  const [hasKey, setHasKey] = useState(false);
+  const [isInteractingGeneral, setIsInteractingGeneral] = useState(false);
+  const [isBoxOpening, setIsBoxOpening] = useState(false);
   const [isGeneratingBoxImage, setIsGeneratingBoxImage] = useState(true);
-  const [boxImageUrl, setBoxImageUrl] = useState<string | null>(null); // Will store data URI
+  const [boxImageUrl, setBoxImageUrl] = useState<string | null>(null);
   const [revealedItem, setRevealedItem] = useState<LootItem | null>(null);
   const [isRevealDialogOpen, setIsRevealDialogOpen] = useState(false);
+
+  const [userGenerationStatus, setUserGenerationStatus] = useState<UserGenerationStatusOutput | null>(null);
+  const [showPaymentDialog, setShowPaymentDialog] = useState(false);
+  const [isCheckingStatus, setIsCheckingStatus] = useState(false);
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
 
   const { toast } = useToast();
   const { address, isConnected, chainId } = useAccount();
   const { context: farcasterContext } = useMiniAppContext();
+  const { sendTransactionAsync, error: transactionError, isPending: isTransactionPending } = useSendTransaction();
 
 
   useEffect(() => {
-    // User "has a key" if wallet is connected and on Monad Testnet
     if (isConnected && chainId === monadTestnet.id) {
       setHasKey(true);
     } else {
@@ -96,7 +103,7 @@ export default function HomePage() {
 
   const fetchNewBoxImage = async () => {
     setIsGeneratingBoxImage(true);
-    setBoxImageUrl(null); // Clear previous image
+    setBoxImageUrl(null);
     try {
       const randomTheme = boxThemes[Math.floor(Math.random() * boxThemes.length)];
       const randomContent = boxContentDescriptions[Math.floor(Math.random() * boxContentDescriptions.length)];
@@ -105,9 +112,7 @@ export default function HomePage() {
         theme: randomTheme,
         contentDescription: randomContent,
       });
-
-      setBoxImageUrl(genkitResult.imageDataUri); // Directly use the data URI
-
+      setBoxImageUrl(genkitResult.imageDataUri);
     } catch (error) {
       console.error("Failed to generate loot box image:", error);
       toast({
@@ -115,7 +120,7 @@ export default function HomePage() {
         description: "Could not get a new loot box image. Using a default.",
         variant: "destructive",
       });
-      setBoxImageUrl("https://placehold.co/320x320.png?text=Mystery+Box"); // Fallback placeholder
+      setBoxImageUrl("https://placehold.co/320x320.png?text=Mystery+Box");
     } finally {
       setIsGeneratingBoxImage(false);
     }
@@ -123,78 +128,49 @@ export default function HomePage() {
 
   useEffect(() => {
     fetchNewBoxImage();
-  }, []); // Fetch on initial load
+  }, []);
 
-  const handleOpenBox = async () => {
-    if (!hasKey) {
-      toast({
-        title: "Wallet Not Ready!",
-        description: "Connect your Farcaster wallet to Monad Testnet.",
-        variant: "destructive",
-      });
-      return;
-    }
+  const proceedWithGeneration = async (isFree: boolean) => {
     if (!address) {
-      toast({
-        title: "Wallet Not Connected",
-        description: "Please ensure your wallet is connected.",
-        variant: "destructive",
-      });
+      toast({ title: "Wallet Not Connected", description: "Please ensure your wallet is connected.", variant: "destructive" });
       return;
     }
-
     setIsInteractingGeneral(true);
     setIsBoxOpening(true);
-
     try {
       const randomTheme = nftThemes[Math.floor(Math.random() * nftThemes.length)];
-
-      // 1. Generate NFT image data URI
-      const imageGenResult = await generateDynamicNftImageDataUri({
-        nftBaseName: randomTheme,
-      });
+      const imageGenResult = await generateDynamicNftImageDataUri({ nftBaseName: randomTheme });
       const nftImageDataUri = imageGenResult.imageDataUri;
 
-      if (!nftImageDataUri) {
-        throw new Error("Failed to generate NFT image data.");
-      }
+      if (!nftImageDataUri) throw new Error("Failed to generate NFT image data.");
 
-      // 2. Call Genkit flow to process metadata (accepts data URI)
       const metadataResult: GenerateNftArtOutput = await generateNftArt({
         nftBaseName: randomTheme,
         userWalletAddress: address,
         userDisplayName: farcasterContext?.user?.displayName,
-        nftImageDataUri: nftImageDataUri, // Pass the data URI directly
+        nftImageDataUri: nftImageDataUri,
+        isFreeGeneration: isFree,
       });
 
       if ("error" in metadataResult) {
-        if (metadataResult.limitReached) {
-          toast({
-            title: "Generation Limit Reached",
-            description: "You've used all your free NFT generations for now. Please come back later!",
-            variant: "destructive",
-            duration: 5000,
-          });
-        } else {
-          throw new Error(metadataResult.error || "Failed to process NFT metadata.");
-        }
-        setIsInteractingGeneral(false);
-        setIsBoxOpening(false);
-        return;
+        throw new Error(metadataResult.error || "Failed to process NFT metadata.");
       }
 
-      const newItem = metadataResult as LootItem; // Successful generation, result is a LootItem
-      console.log("Attempting to add to localStorage:", newItem); // DEBUG LOG
-      addLootItemToLocalStorage(newItem); // Save to localStorage
+      const newItem = metadataResult as LootItem;
+      console.log("Attempting to add to localStorage:", newItem);
+      addLootItemToLocalStorage(newItem);
       setRevealedItem(newItem);
       setIsRevealDialogOpen(true);
-
       fetchNewBoxImage(); // Get a new box for next time
+      // Refresh generation status if it was a free one
+      if (isFree && userGenerationStatus) {
+        setUserGenerationStatus(prev => prev ? {...prev, generationsUsed: prev.generationsUsed + 1, canGenerateForFree: (prev.generationsUsed + 1) < prev.nftGenerationLimit } : null);
+      }
     } catch (error: any) {
       console.error("Error opening loot box:", error);
       toast({
         title: "Opening Failed",
-        description: error.message || "Something went wrong while unveiling your loot. Please try again.",
+        description: error.message || "Something went wrong. Please try again.",
         variant: "destructive",
       });
     } finally {
@@ -203,10 +179,59 @@ export default function HomePage() {
     }
   };
 
+  const initiateOpenBoxSequence = async () => {
+    if (!hasKey || !address) {
+      toast({ title: "Wallet Not Ready!", description: "Connect your Farcaster wallet to Monad Testnet.", variant: "destructive" });
+      return;
+    }
+    setIsCheckingStatus(true);
+    try {
+      const status = await getUserGenerationStatus({ userWalletAddress: address });
+      setUserGenerationStatus(status);
+      if (status.canGenerateForFree) {
+        await proceedWithGeneration(true);
+      } else {
+        setShowPaymentDialog(true);
+      }
+    } catch (error: any) {
+      toast({ title: "Error Checking Status", description: error.message || "Could not check your generation status.", variant: "destructive"});
+    } finally {
+      setIsCheckingStatus(false);
+    }
+  };
+
+  const handlePaymentAndGenerate = async () => {
+    if (!address) return;
+    setIsProcessingPayment(true);
+    try {
+      await sendTransactionAsync({
+        to: TREASURY_ADDRESS,
+        value: parseEther(NFT_GENERATION_COST_MONAD),
+      });
+      toast({ title: "Payment Successful!", description: `Sent ${NFT_GENERATION_COST_MONAD} Monad. Generating your NFT...`, className: "bg-primary text-primary-foreground border-primary" });
+      setShowPaymentDialog(false);
+      await proceedWithGeneration(false);
+    } catch (error: any) {
+      console.error("Payment or post-payment generation failed:", error);
+      const message = transactionError?.message || error.shortMessage || error.message || "Payment or generation failed.";
+      toast({ title: "Payment Failed", description: message, variant: "destructive" });
+    } finally {
+      setIsProcessingPayment(false);
+    }
+  };
+
   const closeRevealDialog = () => {
     setIsRevealDialogOpen(false);
     setRevealedItem(null);
   };
+  
+  const generationsLeftText = () => {
+    if (!userGenerationStatus) return "Connect wallet to see free generations.";
+    const left = userGenerationStatus.nftGenerationLimit - userGenerationStatus.generationsUsed;
+    if (left > 0) return `${left} free NFT generation${left > 1 ? 's' : ''} left!`;
+    return `All free generations used. Next generation costs ${NFT_GENERATION_COST_MONAD} Monad.`;
+  };
+
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[calc(100vh-200px)] gap-10 py-10 px-4 text-center">
@@ -223,24 +248,23 @@ export default function HomePage() {
           <CardContent className="p-3">
             <p className="text-sm text-accent-foreground flex items-center gap-2">
               <Info className="h-5 w-5 text-white" />
-              You get 3 free NFT generations! Use them wisely.
+              {generationsLeftText()}
             </p>
           </CardContent>
         </Card>
       </div>
 
-
       <div className="w-full max-w-4xl flex flex-col lg:flex-row items-center justify-around gap-8 lg:gap-16">
         <MysteryBox
-          imageUrl={boxImageUrl} // This will be a data URI
-          isSpinning={isInteractingGeneral && !isBoxOpening && hasKey}
+          imageUrl={boxImageUrl}
+          isSpinning={(isInteractingGeneral || isCheckingStatus) && !isBoxOpening && hasKey}
           isOpening={isBoxOpening}
-          isGeneratingImage={isGeneratingBoxImage || isInteractingGeneral}
+          isGeneratingImage={isGeneratingBoxImage || isInteractingGeneral || isCheckingStatus}
         />
         <InteractionPanel
           hasKey={hasKey}
-          isBoxOpening={isBoxOpening}
-          onOpenBox={handleOpenBox}
+          isBoxOpening={isBoxOpening || isCheckingStatus || isProcessingPayment}
+          onOpenBox={initiateOpenBoxSequence}
         />
       </div>
 
@@ -261,16 +285,14 @@ export default function HomePage() {
             Farcaster wallet integration (connect to Monad Testnet).
           </p>
           <p>
-            2. <strong className="text-accent">Unlock the Box:</strong> With
-            your wallet connected, open the Monad Loot Box.
+            2. <strong className="text-accent">Unlock the Box:</strong> Open the Monad Loot Box. First 3 are free!
           </p>
           <p>
-            3. <strong className="text-accent">AI Generates:</strong> A unique
-            NFT image is AI-generated (as a data URI).
+            3. <strong className="text-accent">Pay (if needed):</strong> After free trials, generation costs {NFT_GENERATION_COST_MONAD} Monad.
           </p>
           <p>
-            4. <strong className="text-accent">Reveal Your NFT:</strong>{" "}
-            Discover your NFT. Its metadata (including the image data URI) is saved to MongoDB. You get 3 free generations!
+            4. <strong className="text-accent">AI Generates:</strong> A unique
+            NFT image is AI-generated and its metadata is saved to MongoDB.
           </p>
           <p>
             5. <strong className="text-accent">Collect & Admire:</strong> Your
@@ -295,6 +317,34 @@ export default function HomePage() {
         isOpen={isRevealDialogOpen}
         onClose={closeRevealDialog}
       />
+
+      {showPaymentDialog && (
+        <AlertDialog open={showPaymentDialog} onOpenChange={setShowPaymentDialog}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>NFT Generation Cost</AlertDialogTitle>
+              <AlertDialogDescription>
+                You've used all your free NFT generations.
+                To generate another NFT, a payment of {NFT_GENERATION_COST_MONAD} Monad is required.
+                This transaction will be sent to the treasury address: {TREASURY_ADDRESS}.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={isProcessingPayment || isTransactionPending}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handlePaymentAndGenerate}
+                disabled={isProcessingPayment || isTransactionPending}
+                className="bg-accent hover:bg-accent/90 text-accent-foreground"
+              >
+                {isProcessingPayment || isTransactionPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : null}
+                Pay {NFT_GENERATION_COST_MONAD} Monad & Generate
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
     </div>
   );
 }
