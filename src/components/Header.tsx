@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Cube, Package } from 'lucide-react'; // Using Cube as a placeholder for Monad-like icon
+import { Package, Store } from 'lucide-react'; // Added Store icon
 import { Button } from '@/components/ui/button';
 
 export default function Header() {
@@ -10,12 +10,19 @@ export default function Header() {
           <Package size={28} />
           <span>Monad Loot</span>
         </Link>
-        <nav>
+        <nav className="flex items-center gap-2">
           <Button variant="ghost" asChild>
             <Link href="/loot">My Loot</Link>
+          </Button>
+          <Button variant="ghost" asChild>
+            <Link href="/marketplace" className="flex items-center gap-1">
+              <Store size={20} />
+              Marketplace
+            </Link>
           </Button>
         </nav>
       </div>
     </header>
   );
 }
+
