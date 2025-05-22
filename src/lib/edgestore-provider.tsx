@@ -1,8 +1,2 @@
-'use client';
-
-import { EdgeStoreProvider as Provider } from '@edgestore/react';
-import type React from 'react';
-
-export function EdgeStoreProvider({ children }: { children: React.ReactNode }) {
-  return <Provider>{children}</Provider>;
-}
+// This file is intentionally left blank and will be deleted.
+// The correct EdgeStoreProvider setup is in /src/lib/edgestore-config.ts

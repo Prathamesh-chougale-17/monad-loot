@@ -29,7 +29,7 @@ import { useState, useEffect } from "react";
 import { useAccount } from "wagmi";
 import { monadTestnet } from "wagmi/chains";
 import { useMiniAppContext } from "@/hooks/useMiniAppContext";
-import { useEdgeStore } from '@/lib/edgestore-client'; // Edgestore hook
+import { useEdgeStore } from '@/lib/edgestore-config'; // Edgestore hook, using alias
 
 const nftThemes = [
   "Cybernetic Dragon",

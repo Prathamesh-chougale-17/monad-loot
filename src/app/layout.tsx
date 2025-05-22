@@ -1,9 +1,10 @@
+
 import type { Metadata } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
 import './globals.css';
 import MainLayout from '@/components/layout/MainLayout';
 import { FarcasterProvider } from '@/components/farcaster/FarcasterProvider';
-import { EdgeStoreProvider } from '@/lib/edgestore-provider'; // Corrected path
+import { EdgeStoreProvider } from '@/lib/edgestore-config'; // Using alias
 
 const geistSans = Geist({
   variable: '--font-geist-sans',
